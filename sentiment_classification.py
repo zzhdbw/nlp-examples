@@ -14,7 +14,7 @@ label2id = {"negative": 0, "positive": 1}
 id2label = {0: "negative", 1: "positive"}
 
 lr = 2e-5
-train_batch_size = 6
+train_batch_size = 2
 epochs = 20
 
 
@@ -47,7 +47,7 @@ bertTokenizer = BertTokenizer.from_pretrained(r"D:\pretrained_models\bert-base-c
 
 def collate_fn(batch):
     labels, texts = zip(*batch)
-    batch_token_ids = [bertTokenizer.encode(text) for text in texts]
+    batch_token_ids = [bertTokenizer.encode(text, max_length=512, truncation=True) for text in texts]
     text_len = [len(token_ids) for token_ids in batch_token_ids]
     batch_max_len = max(text_len)
     batch_max_len = batch_max_len if batch_max_len <= 512 else 512
@@ -55,7 +55,8 @@ def collate_fn(batch):
     batch_token_ids = [token_ids + [bertTokenizer.pad_token_id] * (batch_max_len - len(token_ids)) if len(
         token_ids) < 512 else token_ids[:batch_max_len] for token_ids in batch_token_ids]
 
-    return torch.LongTensor(batch_token_ids).to(device), torch.LongTensor(labels).to(device)
+    return torch.LongTensor(batch_token_ids).to(device), \
+           torch.LongTensor(labels).to(device)
 
 
 # 定义bert上的模型结构
@@ -63,6 +64,8 @@ class Model(nn.Module):
     def __init__(self, pool_method='cls') -> None:
         super().__init__()
         self.pool_method = pool_method
+        assert self.pool_method in ['cls', 'mean_pooling', 'max_pooling'], "pool_method mast in ['cls', 'mean_pooling', 'max_pooling']!"
+
         self.bert = BertModel.from_pretrained(r"D:\pretrained_models\bert-base-chinese")
         self.dropout = nn.Dropout(0.1)
         self.dense = nn.Linear(self.bert.config.hidden_size, 2)
@@ -71,8 +74,20 @@ class Model(nn.Module):
 
     def forward(self, batch_token_ids, labels=None):
         hidden_states, pooling = self.bert(batch_token_ids, return_dict=False)
-        # print(hidden_states.shape, pooling.shape)
         # pooled_output = get_pool_emb(hidden_states, pooling, token_ids.gt(0).long(), self.pool_method)
+
+        batch_mask = batch_token_ids.gt(0).long()
+        if self.pool_method == 'cls':
+            pooling = pooling
+        elif self.pool_method == 'mean_pooling':
+            # mean pooling
+            hid = torch.sum(hidden_states * batch_mask[:, :, None], dim=1)
+            batch_mask = torch.sum(batch_mask, dim=1)[:, None]
+            pooling = hid / batch_mask
+        elif self.pool_method == 'max_pooling':
+            # max pooling
+            hid = hidden_states * batch_mask[:, :, None]
+            pooling = torch.max(hid, dim=1).values
 
         output = self.dropout(pooling)
         output = self.dense(output)
@@ -83,7 +98,7 @@ class Model(nn.Module):
             return torch.argmax(output, dim=-1)
 
 
-model = Model().to(device)
+model = Model(pool_method='max_pooling').to(device)
 
 trainDataset = MyDataset("train")
 devDataset = MyDataset("dev")
