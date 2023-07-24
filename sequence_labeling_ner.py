@@ -25,17 +25,8 @@ epochs = 20
 max_len = 200
 drop_out = 0.1
 
-
-def search(pattern, sequence):
-    """从sequence中寻找子串pattern
-    如果找到，返回第一个下标；否则返回-1。
-    """
-    n = len(pattern)
-    for i in range(len(sequence)):
-        if sequence[i:i + n] == pattern:
-            return i
-    return -1
-
+bert_lr = 1.0e-5
+down_stream_lr = 1.0e-4
 
 class MyDataset(Dataset):
     def __init__(self, mode):
@@ -72,18 +63,20 @@ def collate_fn(batch):
     batch_max_len = max(text_len)
     batch_max_len = batch_max_len if batch_max_len <= max_len else max_len
     # pad
-    batch_token_ids = [token_ids + [bertTokenizer.pad_token_id] * (batch_max_len - len(token_ids)) if len(
-        token_ids) < max_len else token_ids[:batch_max_len] for token_ids in batch_token_ids]
+    batch_token_ids = [token_ids + [bertTokenizer.pad_token_id] * (batch_max_len - len(token_ids))
+                       if len(token_ids) < max_len else token_ids[:batch_max_len]
+                       for token_ids in batch_token_ids]
 
-    batch_labels = [[label2id["O"]] + [label2id[label] for label in labels] + [label2id["O"]] for labels in
-                    all_labels]
+    batch_labels = [[label2id["O"]] + [label2id[label] for label in labels] + [label2id["O"]]
+                    for labels in all_labels]
     # pad
     batch_labels = [labels + [label2id["O"]] * (batch_max_len - len(labels))
                     if len(labels) < batch_max_len else labels[:batch_max_len]
                     for labels in batch_labels]
 
     return torch.LongTensor(batch_token_ids).to(device), \
-           torch.LongTensor(batch_labels).to(device)
+           torch.LongTensor(batch_labels).to(device), \
+           text_len
 
 
 trainDataset = MyDataset("train")
@@ -110,9 +103,7 @@ class Model(nn.Module):
         self.loss_fn = nn.CrossEntropyLoss()
 
     def forward(self, batch_token_ids, labels=None):
-        batch_size, batch_max_len = batch_token_ids.shape
-
-        hidden_states, pooling = self.bert(batch_token_ids, return_dict=False)
+        hidden_states, pooling = self.bert(batch_token_ids, batch_token_ids.gt(0).long(), return_dict=False)
         batch_mask = batch_token_ids.gt(0).long()
 
         output = self.dropout(hidden_states)
@@ -125,12 +116,23 @@ class Model(nn.Module):
 
 
 model = Model().to(device)
-optimizer = optim.Adam(model.parameters(), lr=lr)
+
+param_optimizer = list(model.named_parameters())  # 模型的所有参数
+param_pre = [(n, p) for n, p in param_optimizer if 'bert' in n]  # 与bert相关的所有参数
+param_downstream = [(n, p) for n, p in param_optimizer if 'bert' not in n]  # 与bert无关的所有参数
+optimizer_grouped_parameters = [  # 设置不同的学习率
+    # pretrain model param
+    {'params': [p for n, p in param_pre], 'lr': bert_lr},
+    # downstream model
+    {'params': [p for n, p in param_downstream], 'lr': down_stream_lr}
+]
+
+optimizer = optim.Adam(optimizer_grouped_parameters, bert_lr)
 
 for epoch in range(epochs):
     model.train()
     train_bar = tqdm(trainDataLoader)
-    for batch_token_ids, batch_labels in train_bar:
+    for batch_token_ids, batch_labels, _ in train_bar:
         train_bar.set_description_str("epoch:{}".format(epoch))
 
         loss = model(batch_token_ids, batch_labels)
@@ -144,15 +146,19 @@ for epoch in range(epochs):
 
     model.eval()
     dev_bar = tqdm(devDataLoader)
-    right, totol = 0, 0
-    for batch_token_ids, batch_labels in dev_bar:
-        predict = model(batch_token_ids)
-        labels, predict = labels.tolist(), predict.tolist()
+    y_true, y_predict = [], []
+    for batch_token_ids, batch_labels, batch_len in dev_bar:
+        batch_predicts = model(batch_token_ids)
+        batch_labels, batch_predicts = batch_labels.tolist(), batch_predicts.tolist()
 
-        score = sum([1 if label == predict else 0 for label, predict in zip(labels, predict)])
-        right += score
-        totol += len(labels)
+        batch_labels = [[id2label[label] for label in labels[:batch_len[index]]] for index, labels in enumerate(batch_labels)]
+        batch_predicts = [[id2label[predict] for predict in predicts[:batch_len[index]]] for index, predicts in enumerate(batch_predicts)]
 
-        acc = right / totol
-        dev_bar.set_postfix(acc=acc)
+        y_true += batch_labels
+        y_predict += batch_predicts
+
+        # dev_bar.set_postfix(acc=acc)
+    p, r, f = precision_score(y_true, y_predict), recall_score(y_true, y_predict), f1_score(y_true, y_predict)
+
     dev_bar.close()
+    print("dev p={}, r={}, f={}".format(p, r, f))

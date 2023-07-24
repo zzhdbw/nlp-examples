@@ -15,6 +15,8 @@ label2id = {"negative": 0, "positive": 1}
 id2label = {0: "negative", 1: "positive"}
 
 # acc: 94.6  epoch:10 max_len:200
+# acc: 94.8  epoch:10 max_len:512
+
 lr = 2e-5
 train_batch_size = 6
 epochs = 20
@@ -78,10 +80,9 @@ class Model(nn.Module):
         self.loss_fn = nn.CrossEntropyLoss()
 
     def forward(self, batch_token_ids, labels=None):
-        hidden_states, pooling = self.bert(batch_token_ids, return_dict=False)
-        # pooled_output = get_pool_emb(hidden_states, pooling, token_ids.gt(0).long(), self.pool_method)
-
         batch_mask = batch_token_ids.gt(0).long()
+        hidden_states, pooling = self.bert(batch_token_ids, batch_mask, return_dict=False)
+
         if self.pool_method == 'cls':
             pooling = pooling
         elif self.pool_method == 'mean_pooling':
