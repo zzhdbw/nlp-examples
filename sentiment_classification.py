@@ -20,7 +20,7 @@ id2label = {0: "negative", 1: "positive"}
 lr = 2e-5
 train_batch_size = 6
 epochs = 20
-max_len = 512
+max_len = 200
 drop_out = 0.1
 
 

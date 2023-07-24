@@ -28,6 +28,7 @@ drop_out = 0.1
 bert_lr = 1.0e-5
 down_stream_lr = 1.0e-4
 
+
 class MyDataset(Dataset):
     def __init__(self, mode):
         self.all_text, self.all_labels = self._read_data(mode)
@@ -53,7 +54,6 @@ class MyDataset(Dataset):
 
 
 bertTokenizer = BertTokenizer.from_pretrained(r"D:\pretrained_models\bert-base-chinese")
-
 
 def collate_fn(batch):
     all_text, all_labels = zip(*batch)
@@ -103,11 +103,15 @@ class Model(nn.Module):
         self.loss_fn = nn.CrossEntropyLoss()
 
     def forward(self, batch_token_ids, labels=None):
-        hidden_states, pooling = self.bert(batch_token_ids, batch_token_ids.gt(0).long(), return_dict=False)
-        batch_mask = batch_token_ids.gt(0).long()
-
+        batch_mask = batch_token_ids.gt(bertTokenizer.pad_token_id).long()
+        hidden_states, pooling = self.bert(batch_token_ids, batch_mask, return_dict=False)
         output = self.dropout(hidden_states)
         output = self.dense(output)
+
+        # print(output.shape)
+        # print(batch_mask.shape)
+        # exit()
+        output = output * batch_mask[:,:,None]
 
         if (labels is not None):
             return self.loss_fn(output.reshape(-1, len(label2id)), labels.reshape(-1))
@@ -151,8 +155,10 @@ for epoch in range(epochs):
         batch_predicts = model(batch_token_ids)
         batch_labels, batch_predicts = batch_labels.tolist(), batch_predicts.tolist()
 
-        batch_labels = [[id2label[label] for label in labels[:batch_len[index]]] for index, labels in enumerate(batch_labels)]
-        batch_predicts = [[id2label[predict] for predict in predicts[:batch_len[index]]] for index, predicts in enumerate(batch_predicts)]
+        batch_labels = [[id2label[label] for label in labels[:batch_len[index]]] for index, labels in
+                        enumerate(batch_labels)]
+        batch_predicts = [[id2label[predict] for predict in predicts[:batch_len[index]]] for index, predicts in
+                          enumerate(batch_predicts)]
 
         y_true += batch_labels
         y_predict += batch_predicts

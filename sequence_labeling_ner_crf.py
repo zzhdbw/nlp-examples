@@ -278,7 +278,7 @@ bertTokenizer = BertTokenizer.from_pretrained(r"D:\pretrained_models\bert-base-c
 
 train_batch_size = 2
 epochs = 20
-max_len = 200
+max_len = 512
 drop_out = 0.1
 
 bert_lr = 1.0e-5
@@ -368,7 +368,6 @@ class Model(nn.Module):
         self.dropout = nn.Dropout(drop_out)
         self.dense = nn.Linear(self.bert.config.hidden_size, len(label2id))
 
-        self.loss_fn = nn.CrossEntropyLoss()
         self.crf = CRF(len(label2id))
 
     def forward(self, batch_token_ids, labels=None):
