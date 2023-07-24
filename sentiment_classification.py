@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-            
 # @Author : Zhihao Zhang
 # @Time : 2023/7/23 21:02
+# 该代码用以进行情感二分类训练 以acc作为评价指标
 import torch
 from torch import nn
 import torch.optim as optim
@@ -13,9 +14,12 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 label2id = {"negative": 0, "positive": 1}
 id2label = {0: "negative", 1: "positive"}
 
+# acc: 94.6  epoch:10 max_len:200
 lr = 2e-5
-train_batch_size = 2
+train_batch_size = 6
 epochs = 20
+max_len = 512
+drop_out = 0.1
 
 
 class MyDataset(Dataset):
@@ -47,13 +51,13 @@ bertTokenizer = BertTokenizer.from_pretrained(r"D:\pretrained_models\bert-base-c
 
 def collate_fn(batch):
     labels, texts = zip(*batch)
-    batch_token_ids = [bertTokenizer.encode(text, max_length=512, truncation=True) for text in texts]
+    batch_token_ids = [bertTokenizer.encode(text, max_length=max_len, truncation=True) for text in texts]
     text_len = [len(token_ids) for token_ids in batch_token_ids]
     batch_max_len = max(text_len)
-    batch_max_len = batch_max_len if batch_max_len <= 512 else 512
+    batch_max_len = batch_max_len if batch_max_len <= max_len else max_len
 
     batch_token_ids = [token_ids + [bertTokenizer.pad_token_id] * (batch_max_len - len(token_ids)) if len(
-        token_ids) < 512 else token_ids[:batch_max_len] for token_ids in batch_token_ids]
+        token_ids) < max_len else token_ids[:batch_max_len] for token_ids in batch_token_ids]
 
     return torch.LongTensor(batch_token_ids).to(device), \
            torch.LongTensor(labels).to(device)
@@ -64,11 +68,12 @@ class Model(nn.Module):
     def __init__(self, pool_method='cls') -> None:
         super().__init__()
         self.pool_method = pool_method
-        assert self.pool_method in ['cls', 'mean_pooling', 'max_pooling'], "pool_method mast in ['cls', 'mean_pooling', 'max_pooling']!"
+        assert self.pool_method in ['cls', 'mean_pooling',
+                                    'max_pooling'], "pool_method mast in ['cls', 'mean_pooling', 'max_pooling']!"
 
         self.bert = BertModel.from_pretrained(r"D:\pretrained_models\bert-base-chinese")
-        self.dropout = nn.Dropout(0.1)
-        self.dense = nn.Linear(self.bert.config.hidden_size, 2)
+        self.dropout = nn.Dropout(drop_out)
+        self.dense = nn.Linear(self.bert.config.hidden_size, len(label2id))
 
         self.loss_fn = nn.CrossEntropyLoss()
 
@@ -86,7 +91,7 @@ class Model(nn.Module):
             pooling = hid / batch_mask
         elif self.pool_method == 'max_pooling':
             # max pooling
-            hid = hidden_states * batch_mask[:, :, None]
+            hid = hidden_states * batch_mask[:, :, None]  # None的意义是增加一个维度
             pooling = torch.max(hid, dim=1).values
 
         output = self.dropout(pooling)
@@ -98,7 +103,7 @@ class Model(nn.Module):
             return torch.argmax(output, dim=-1)
 
 
-model = Model(pool_method='max_pooling').to(device)
+model = Model(pool_method='cls').to(device)
 
 trainDataset = MyDataset("train")
 devDataset = MyDataset("dev")
@@ -119,7 +124,7 @@ for epoch in range(epochs):
     model.train()
     train_bar = tqdm(trainDataLoader)
     for batch_token_ids, labels in train_bar:
-        train_bar.set_description_str("epoch:{}".format(epoch))
+        train_bar.set_description_str("epoch:{}".format(epoch + 1))
 
         loss = model(batch_token_ids, labels)
         loss.backward()
