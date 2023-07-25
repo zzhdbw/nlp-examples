@@ -1,2 +1,2 @@
 *.pt
-data/THUCNews/*/*.txt
+/data/THUCNews/*/*.txt
