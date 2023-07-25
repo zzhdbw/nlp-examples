@@ -55,6 +55,7 @@ class MyDataset(Dataset):
 
 bertTokenizer = BertTokenizer.from_pretrained(r"D:\pretrained_models\bert-base-chinese")
 
+
 def collate_fn(batch):
     all_text, all_labels = zip(*batch)
 
@@ -108,10 +109,7 @@ class Model(nn.Module):
         output = self.dropout(hidden_states)
         output = self.dense(output)
 
-        # print(output.shape)
-        # print(batch_mask.shape)
-        # exit()
-        output = output * batch_mask[:,:,None]
+        output = output * batch_mask[:, :, None]
 
         if (labels is not None):
             return self.loss_fn(output.reshape(-1, len(label2id)), labels.reshape(-1))

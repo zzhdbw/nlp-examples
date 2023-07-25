@@ -9,12 +9,10 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import BertTokenizer, BertModel
 from tqdm import tqdm
 from seqeval.metrics import accuracy_score, precision_score, recall_score, f1_score  # 实体级别评价指标
-
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
 from typing import List, Optional
 import numpy as np
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class CRF(nn.Module):
     '''Conditional random field: https://github.com/lonePatient/BERT-NER-Pytorch/blob/master/models/layers/crf.py
