@@ -33,9 +33,6 @@ max_len = 512
 drop_out = 0.1
 hidden_dim = 300
 
-stanfordNlp = StanfordCoreNLP("D:\stanford-corenlp-full-2018-02-27", lang='zh')
-
-
 class WordEmbedding():
     def __init__(self, train_dataset_path, dev_dataset_path, word_dim):
         self.word_dim = word_dim
@@ -71,9 +68,7 @@ class WordEmbedding():
 
         return torch.FloatTensor(embedding_matrix)
 
-
 we = WordEmbedding("./data/ChnSentiCorp/train.json", "./data/ChnSentiCorp/dev.json", 300)
-
 
 class MyDataset(Dataset):
     def __init__(self, mode):

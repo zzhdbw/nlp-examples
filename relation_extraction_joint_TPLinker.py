@@ -300,13 +300,13 @@ class MyLoss(nn.CrossEntropyLoss):
             loss = super().forward(y_pred.view(-1, y_pred.size()[-1]), y_true.view(-1))
             loss_list.append(loss)
 
-        z = (2 * len(label2id) + 1)
-
         # 不同子任务不同权重
+        # z = (2 * len(label2id) + 1)
         # total_steps = 6000  # 前期实体识别的权重高一些，建议也可以设置为model.total_steps
         # w_ent = max(1 / z + 1 - model.global_step / total_steps, 1 / z)
         # w_rel = min((len(label2id) / z) * model.global_step / total_steps, (len(label2id) / z))
 
+        # 为了简洁 不同子任务权重一致
         w_ent = 1
         w_rel = 1
         loss = w_ent * loss_list[0] + w_rel * loss_list[1] + w_rel * loss_list[2]
@@ -314,6 +314,24 @@ class MyLoss(nn.CrossEntropyLoss):
         # return {'loss': loss, 'entity_loss': loss_list[0], 'head_loss': loss_list[1], 'tail_loss': loss_list[2]}
 
         return loss
+
+
+class SPO:
+    def __init__(self, s, p, o):
+        self.s = s
+        self.p = p
+        self.o = o
+
+    def __hash__(self):
+        return hash((self.s, self.p, self.o))
+
+    def __eq__(self, other):
+        return self.s == other.s and \
+               self.p == other.p and \
+               self.o == other.o
+
+    def __repr__(self):
+        return f'SPO(S={self.s},P={self.p},O={self.o})'
 
 
 loss_fn = MyLoss()
@@ -330,8 +348,9 @@ optimizer = optim.Adam(model.parameters(), lr=bert_lr)
 
 for epoch in range(epochs):
     model.train()
+    i = 0
     train_bar = tqdm(trainDataLoader)
-    for batch_token_ids, batch_entity_labels, batch_head_labels, batch_tail_labels in trainDataLoader:
+    for batch_token_ids, batch_entity_labels, batch_head_labels, batch_tail_labels in train_bar:
         train_bar.set_description_str("epoch:{}".format(epoch + 1))
         ent_shaking_outputs, head_rel_shaking_outputs, tail_rel_shaking_outputs = model(batch_token_ids)
         loss = loss_fn([ent_shaking_outputs, head_rel_shaking_outputs, tail_rel_shaking_outputs], [batch_entity_labels, batch_head_labels, batch_tail_labels])
